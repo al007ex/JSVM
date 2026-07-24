@@ -1,0 +1,20 @@
+{
+    "compilerOptions": {
+      "declaration": true,
+      "lib": ["es6", "dom", "dom.iterable"],
+      "module": "es6",
+      "moduleResolution": "node",
+      "removeComments": true,
+      "sourceMap": true,
+      "strict": true,
+      "target": "es5",
+      "outDir": "./dist/EmulatorTemplate/"
+    },
+    "include": [
+      "src/Emulator.ts"
+    ],
+    "exclude": [
+      "dist",
+      "node_modules"
+    ]
+  }

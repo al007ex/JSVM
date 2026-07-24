@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Build and generated output
+dist/
+out/
+coverage/
+*.tsbuildinfo
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment and local config
+.env
+.env.*
+!.env.example
+.DS_Store
+.vscode/
+.idea/
+.claude/
+
+# Local scratch/dev files
+a.js
+server.js
+scripts/server.js

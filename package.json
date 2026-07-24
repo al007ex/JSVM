@@ -1,0 +1,41 @@
+{
+  "name": "bytecode-compiler",
+  "version": "1.0.0",
+  "description": "Custom JavaScript bytecode compiler and emulator runtime.",
+  "main": "dist/index.js",
+  "scripts": {
+    "_test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "nodemon",
+    "start": "node scripts/run-cli.js",
+    "clean": "rm -fr dist",
+    "compile": "node scripts/run-cli.js",
+    "transpile": "babel input/in.js --out-file input/in.js --presets babel-preset-es2015",
+    "build": "npm run clean && tsc && tsc --project tsconfig.EmulatorTemplate.json && npm run bundle:esm",
+    "bundle:esm": "rollup dist/EmulatorTemplate/Emulator.js --file dist/EmulatorTemplate/EmulatorTemplate.js --format iife --name bytecodeVm"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/acorn": "^4.0.6",
+    "@types/estraverse": "^5.1.1",
+    "@types/node": "^16.7.2",
+    "acorn": "^8.4.1",
+    "acorn-walk": "^8.1.1",
+    "babel-cli": "^6.26.0",
+    "babel-plugin-transform-async-to-promises": "^0.8.15",
+    "babel-preset-es2015": "^6.24.1",
+    "escodegen": "^2.0.0",
+    "escope": "^3.6.0",
+    "espree": "^8.0.0",
+    "estraverse": "^5.2.0",
+    "nodemon": "^2.0.12",
+    "rollup": "^2.56.3",
+    "terser": "^5.7.2",
+    "ts-node": "^10.2.1",
+    "typescript": "^4.3.5"
+  },
+  "dependencies": {
+    "javascript-obfuscator": "^4.1.1"
+  }
+}

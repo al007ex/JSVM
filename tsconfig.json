@@ -1,0 +1,19 @@
+{
+    "compilerOptions": {
+        "target": "es5",
+        "esModuleInterop": true,
+        "sourceMap": true,
+       // "noImplicitAny": true,
+       // "noImplicitReturns": true,
+        "lib": [
+            "es2015",
+            "es5",
+            "es6",
+            "dom"
+        ],
+       // "noUnusedLocals": true,
+        "strict": false,
+        "outDir": "./dist"
+    },
+    "include": [ "./src/index.ts" ]
+}
