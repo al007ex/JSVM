@@ -26,5 +26,3 @@ pnpm-debug.log*
 
 # Local scratch/dev files
 a.js
-server.js
-scripts/server.js
