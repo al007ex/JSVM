@@ -1,7 +1,7 @@
 
 import {parse} from "acorn";
 import { traverse } from "estraverse";
-import { GenerateArrayExpression, GenerateAssignmentExpression, GenerateBinaryExpression, GenerateBlockStatement, GenerateBreakStatement, GenerateContinueStatement, GenerateByteCode, GenerateCallExpression, GenerateConditionalExpression, GenerateDebuggerStatement, GenerateDoWhileStatement, GenerateExpressionStatement, GenerateForStatement, GenerateFunctionDeclaration, GenerateFunctionExpression, GenerateIdentifier, GenerateIfStatement, GenerateLiteral, GenerateLogicalExpression, GenerateMemberExpression, GenerateNewExpression, GenerateObjectExpression, GenerateProgram, GenerateProperty, GenerateReturnStatement, GenerateSequenceExpression, GenerateSwitchStatement, GenerateThisExpression, GenerateThrowStatement, GenerateTryStatement, GenerateUnaryExpression, GenerateUpdateExpression, GenerateVariableDeclaration, GenerateVariableDeclarator, GenerateWhileStatement } from "./ASTCodegen";
+import { GenerateArrayExpression, GenerateAssignmentExpression, GenerateBinaryExpression, GenerateBlockStatement, GenerateBreakStatement, GenerateContinueStatement, GenerateByteCode, GenerateCallExpression, GenerateArrowFunctionExpression, GenerateConditionalExpression, GenerateDebuggerStatement, GenerateDoWhileStatement, GenerateExpressionStatement, GenerateForStatement, GenerateFunctionDeclaration, GenerateFunctionExpression, GenerateIdentifier, GenerateIfStatement, GenerateLiteral, GenerateLogicalExpression, GenerateMemberExpression, GenerateNewExpression, GenerateObjectExpression, GenerateProgram, GenerateProperty, GenerateReturnStatement, GenerateSequenceExpression, GenerateSwitchStatement, GenerateThisExpression, GenerateThrowStatement, GenerateTryStatement, GenerateUnaryExpression, GenerateUpdateExpression, GenerateVariableDeclaration, GenerateVariableDeclarator, GenerateWhileStatement } from "./ASTCodegen";
 import { Label } from "./Label";
 import { Strings } from "./Strings";
 import { BlockStatement, ThrowStatement, SequenceExpression, ConditionalExpression, TryStatement, BreakStatement, SwitchStatement, LogicalExpression, NewExpression, DebuggerStatement, ArrayExpression, ThisExpression, FunctionExpression, Property, MemberExpression, ForStatement, ObjectExpression, UnaryExpression, UpdateExpression, ReturnStatement, CallExpression, FunctionDeclaration, Identifier, AssignmentExpression, VariableDeclaration, WhileStatement, BinaryExpression, Literal, Node, VariableDeclarator, IfStatement, Program, ExpressionStatement } from "estree";
@@ -118,6 +118,23 @@ export class Scope{
         }
     }
 
+    arrowFunction(node){
+        if(node === this.node){
+            // Arrows do NOT declare their own `arguments` — it is inherited
+            // lexically. Only the parameters become local definitions.
+            node.params.forEach(param => {
+                if(param.type !== "Identifier") throw("Unsupported arrow function parameter type: " + param.type);
+                let name = param.name;
+                if(this.definition_set.has(name)) return;
+                if(this.reference_set.has(name)) this.reference_set.delete(name);
+                this.addDefinition(name);
+            })
+            this.traverse(node.body);
+
+            return;
+        }
+    }
+
     functionDeclaration(node: FunctionDeclaration){
         if(node === this.node){
             let name = "arguments";
@@ -161,6 +178,12 @@ export class Scope{
                     }
                     case "FunctionExpression": {
                         scope.functionExpression(node);
+                        return this.skip();
+                    }
+                    case "ArrowFunctionExpression": {
+                        // Arrow bodies are their own function scope; do not let
+                        // their declarations leak into this scope.
+                        scope.arrowFunction(node);
                         return this.skip();
                     }
                     case "CatchClause": {
@@ -251,6 +274,9 @@ export class Scope{
                 break;
             case "FunctionExpression":
                 GenerateFunctionExpression(node, this);
+                break;
+            case "ArrowFunctionExpression":
+                GenerateArrowFunctionExpression(node, this);
                 break;
             case "ThisExpression": 
                 GenerateThisExpression(node, this);

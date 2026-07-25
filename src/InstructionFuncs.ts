@@ -45,6 +45,18 @@ a[Op.CreateFunction] = function(block){
     block._stack.push(block.runChild(blockid).makeFn());
 }
 
+// Like CreateFunction, but marks the child as an arrow and captures the
+// enclosing `this` and `arguments` at creation time. The arrow then ignores the
+// call-time `this` (makeFn) and `arguments` (GetArgs), giving lexical semantics.
+a[Op.CreateArrow] = function(block){
+    let blockid = block.readI32();
+    let child = block.runChild(blockid);
+    child.isArrow = true;
+    child.lexicalThis = block.scope;
+    child.lexicalArgs = block.args;
+    block._stack.push(child.makeFn());
+}
+
 a[Op.Call] = function(block){
     let totalArgs = block.readI8();
     let args = [];
@@ -603,7 +615,8 @@ a[Op.RaiseExponent] = function(block){
 }
 
 a[Op.GetArgs] = function(block){
-    block._stack.push(block.args);
+    // In an arrow, `arguments` refers to the enclosing function's arguments.
+    block._stack.push(block.isArrow ? block.lexicalArgs : block.args);
 }
 
 a[Op.JumpToStart] = function(block){

@@ -320,6 +320,11 @@ export function emitCreateFunction(scope: Scope, blockid: number){
     __writeI32(scope, blockid);
 }
 
+export function emitCreateArrow(scope: Scope, blockid: number){
+    __writeI8(scope, Op.CreateArrow);
+    __writeI32(scope, blockid);
+}
+
 export function emitGetArguments(scope: Scope, index: number){
     __writeI8(scope, Op.GetArguments);
     __writeI8(scope, index);
@@ -533,13 +538,14 @@ export function GenerateCallExpression(node: CallExpression, scope: Scope){
             emitObjectPropertyCall(scope, node.arguments.length);
             break;
         }
-        case "FunctionExpression": {
+        default: {
+            // Any other callee expression (function/arrow expression, the result
+            // of another call like mk()(), a conditional, etc.): evaluate it to a
+            // function value and call it with `this` = global.
             scope.generate(callee);
             emitCall(scope, node.arguments.length);
             break;
         }
-        default:
-            throw("Unsupported callee type" + callee.type);
     }
 }
 
@@ -585,6 +591,41 @@ export function GenerateFunctionExpression(node: FunctionExpression, scope: Scop
         //child.generate(child.node);
         emitEND(child);
         emitCreateFunction(scope, child.id);
+    }
+}
+
+export function GenerateArrowFunctionExpression(node: any, scope: Scope){
+    if(scope.node === node){
+        // Generating the arrow's own body. Params bind from the call arguments,
+        // exactly like a regular function. `this` and `arguments` are lexical and
+        // resolved by the VM (CreateArrow captures them, GetArgs/This read them),
+        // so there is nothing to emit for them here.
+        let argumentId = 0;
+        node.params.forEach((child: any) => {
+            if(child.type === "Identifier"){
+                let varid = scope.getVarId(child.name);
+                emitGetArguments(scope, argumentId);
+                emitAssignValue(scope, varid);
+                argumentId++;
+            }else{
+                // Default/rest/destructuring params are not supported yet; fail
+                // loudly rather than miscompile.
+                throw("Unsupported arrow function parameter type: " + child.type);
+            }
+        });
+
+        if(node.body.type === "BlockStatement"){
+            scope.generate(node.body);
+        }else{
+            // Concise body: `x => expr` means `x => { return expr; }`.
+            scope.generate(node.body);
+            emitReturn(scope);
+        }
+    }else{
+        let child = scope.makeChild(node);
+        GenerateByteCode(child.node, child);
+        emitEND(child);
+        emitCreateArrow(scope, child.id);
     }
 }
 

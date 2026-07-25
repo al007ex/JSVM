@@ -552,6 +552,13 @@ class Block{
     public U: number = 1;
     public I: Array<any> = [];
 
+    // Arrow functions capture `this` and `arguments` lexically at creation time
+    // (see the CreateArrow handler). When set, makeFn ignores the call-time
+    // `this`, and GetArgs uses lexicalArgs instead of the call arguments.
+    public isArrow = false;
+    public lexicalThis: any = undefined;
+    public lexicalArgs: any = undefined;
+
     constructor(blockId: number, parent: (Block | null) = null){
         
         this.blockId = blockId;
@@ -669,7 +676,7 @@ class Block{
 
                 for (let i = 0; i < that.args.length; i++) that._stack[that.args.length - i - 1] = that.args[i];
 
-                that.scope = this;
+                that.scope = that.isArrow ? that.lexicalThis : this;
                 that.ip = that.startOffset;
 
                 return that.run();
@@ -700,7 +707,7 @@ class Block{
             that._stack = []; //this seems to be a problem statement
             for (let i = 0; i < that.args.length; i++) that._stack[that.args.length - i - 1] = that.args[i];
 
-            that.scope = this;
+            that.scope = that.isArrow ? that.lexicalThis : this;
             that.ip = scope[4];
 
             var f;
