@@ -83,6 +83,13 @@ export const _Op: { [key: string]: number } = {
     PreMinusMinus: id++,
     PushHandler: id++,
     PopHandler: id++,
+
+    PrePropertyPlusPlus: id++,
+    PrePropertyMinusMinus: id++,
+    EndFinally: id++,
+    PushFinally: id++,
+    PopFinally: id++,
+    ReturnFinally: id++,
 };
 export const OpRemap: { [key: string]: number } = {};
 export const Op: { [key: string]: number } = {};
@@ -190,4 +197,10 @@ export const OpcodeString: { [key: number]: string } = {
     [_Op.PreMinusMinus] : "PreMinusMinus",
     [_Op.PushHandler] : "PushHandler",
     [_Op.PopHandler] : "PopHandler",
+    [_Op.PrePropertyPlusPlus] : "PrePropertyPlusPlus",
+    [_Op.PrePropertyMinusMinus] : "PrePropertyMinusMinus",
+    [_Op.EndFinally] : "EndFinally",
+    [_Op.PushFinally] : "PushFinally",
+    [_Op.PopFinally] : "PopFinally",
+    [_Op.ReturnFinally] : "ReturnFinally",
 };

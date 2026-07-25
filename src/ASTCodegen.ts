@@ -227,6 +227,28 @@ export function emitPopHandler(scope: Scope){
     __writeI8(scope, Op.PopHandler);
 }
 
+export function emitPushFinally(scope: Scope){
+    __writeI8(scope, Op.PushFinally);
+}
+
+export function emitPopFinally(scope: Scope){
+    __writeI8(scope, Op.PopFinally);
+}
+
+export function emitEndFinally(scope: Scope){
+    __writeI8(scope, Op.EndFinally);
+}
+
+export function emitReturnFinally(scope: Scope){
+    __writeI8(scope, Op.ReturnFinally);
+}
+
+// obj[prop] read-modify-write; used for member and global updates.
+export function emitPropertyUpdate(scope: Scope, isPlus: boolean, prefix: boolean){
+    if(isPlus) __writeI8(scope, prefix ? Op.PrePropertyPlusPlus : Op.PropertyPlusPlus);
+    else __writeI8(scope, prefix ? Op.PrePropertyMinusMinus : Op.PropertyMinusMinus);
+}
+
 export function emitMultiply(scope: Scope){
     __writeI8(scope, Op.Multiply);
 }
@@ -369,7 +391,7 @@ export function GenerateWhileStatement(node: WhileStatement, scope: Scope){
     let body_label = scope.makeLabel(Uint32Array.BYTES_PER_ELEMENT);
     body_label.setOrigin();
 
-    let ctx: LoopContext = { breaks: [], continues: [], continueOffset };
+    let ctx: LoopContext = { breaks: [], continues: [], continueOffset, finallyDepth: finallyStack.length };
     loopStack.push(ctx);
     scope.generate(node.body);
     loopStack.pop();
@@ -389,8 +411,21 @@ export function GenerateThisExpression(node: ThisExpression, scope: Scope){
 }
 
 export function GenerateReturnStatement(node: ReturnStatement, scope: Scope){
-    if(node.argument) scope.generate(node.argument);
-    emitReturn(scope);
+    if(finallyStack.length > 0){
+        // Inside a try/finally: capture the return value, then jump to the
+        // innermost finalizer. EndFinally performs the actual return (running any
+        // further enclosing finalizers on the way out).
+        if(node.argument) scope.generate(node.argument);
+        else { emitI8(scope, 0); emitVoid(scope); }   // push undefined
+        emitReturnFinally(scope);
+        emitJMP(scope);
+        let return_label = scope.makeLabel(Uint32Array.BYTES_PER_ELEMENT);
+        return_label.setOrigin();
+        finallyStack[finallyStack.length - 1].returns.push(return_label);
+    }else{
+        if(node.argument) scope.generate(node.argument);
+        emitReturn(scope);
+    }
 }
 
 export function GenerateSequenceExpression(node: SequenceExpression, scope: Scope){
@@ -581,18 +616,56 @@ export function GenerateLogicalExpression(node: LogicalExpression, scope: Scope)
 // Stack of enclosing loops/switches, innermost last. `breaks` collects jumps
 // that should land after the construct; `continues` collects jumps to the loop's
 // continue point (null for switch, which is breakable but not continuable).
-type LoopContext = { breaks: any[]; continues: any[] | null; continueOffset: number };
+// `finallyDepth` records finallyStack.length at entry so break/continue know
+// which finalizers they jump out through.
+type LoopContext = { breaks: any[]; continues: any[] | null; continueOffset: number; finallyDepth: number };
 const loopStack: LoopContext[] = [];
 
-// Clear any loop context left over from a previous compile so the module can be
-// reused across multiple compilations in one process.
+// Active try/finally blocks, innermost last. A `return`/`break`/`continue` that
+// leaves one must run its finalizer first. `returns` collects the jumps a routed
+// return makes to the finalizer entry so they can be back-patched.
+type FinallyContext = { returns: any[]; finalizer: any };
+const finallyStack: FinallyContext[] = [];
+
+// Clear leftover control-flow context so the module can be reused across
+// multiple compilations in one process.
 export function resetCodegenState(){
     loopStack.length = 0;
+    finallyStack.length = 0;
+}
+
+// break/continue/return cannot cross a function boundary, so isolate the stacks
+// when generating a nested function body and restore them afterwards.
+function saveControlFlowStacks(){
+    let saved = { loops: loopStack.slice(), finallys: finallyStack.slice() };
+    loopStack.length = 0;
+    finallyStack.length = 0;
+    return saved;
+}
+function restoreControlFlowStacks(saved: { loops: any[]; finallys: any[] }){
+    loopStack.length = 0;
+    finallyStack.length = 0;
+    for(const c of saved.loops) loopStack.push(c);
+    for(const c of saved.finallys) finallyStack.push(c);
+}
+
+// Run and remove every finally handler from the innermost down to `targetDepth`,
+// emitting each finalizer inline before the enclosing jump (break/continue).
+function unwindFinalliesTo(scope: Scope, targetDepth: number){
+    let removed: FinallyContext[] = [];
+    while(finallyStack.length > targetDepth) removed.push(finallyStack.pop()!);
+    for(const fin of removed){          // innermost first
+        emitPopHandler(scope);          // drop this finally's handler from k
+        scope.generate(fin.finalizer);  // run the finalizer inline
+    }
+    // Restore for code that follows the break/continue in source order.
+    for(let i = removed.length - 1; i >= 0; i--) finallyStack.push(removed[i]);
 }
 
 export function GenerateBreakStatement(node: BreakStatement, scope: Scope){
     if(loopStack.length === 0) throw("break statement outside of a loop or switch");
     let ctx = loopStack[loopStack.length - 1];
+    unwindFinalliesTo(scope, ctx.finallyDepth);
     emitJMP(scope);
     let break_label = scope.makeLabel(Uint32Array.BYTES_PER_ELEMENT);
     break_label.setOrigin();
@@ -606,13 +679,14 @@ export function GenerateContinueStatement(node: ContinueStatement, scope: Scope)
         if(loopStack[i].continues){ ctx = loopStack[i]; break; }
     }
     if(!ctx) throw("continue statement outside of a loop");
+    unwindFinalliesTo(scope, ctx.finallyDepth);
     emitJMP(scope);
     let continue_label = scope.makeLabel(Uint32Array.BYTES_PER_ELEMENT);
     continue_label.setOrigin();
     ctx.continues.push(continue_label);
 }
 
-export function GenerateTryStatement(node: TryStatement, scope: Scope){
+function generateTryCatch(node: TryStatement, scope: Scope){
     let handler = node.handler;
     if(handler){
         // Register a catch handler for the duration of the try block. On a throw
@@ -640,10 +714,34 @@ export function GenerateTryStatement(node: TryStatement, scope: Scope){
     }else{
         scope.generate(node.block);
     }
+}
 
-    // NOTE: finally currently runs on the normal and caught paths, but not while
-    // an exception propagates uncaught. Full unwind-time finally is a known gap.
-    if(node.finalizer) scope.generate(node.finalizer);
+export function GenerateTryStatement(node: TryStatement, scope: Scope){
+    if(node.finalizer){
+        // A finally handler covers the whole try/catch region. The finalizer runs
+        // on: normal completion (PopFinally), a thrown exception (the VM routes
+        // through the handler on k), and a return (routed via ReturnFinally).
+        emitPushFinally(scope);
+        let finally_label = scope.makeLabel(Uint32Array.BYTES_PER_ELEMENT);
+        finally_label.setOrigin();
+
+        let ctx: FinallyContext = { returns: [], finalizer: node.finalizer };
+        finallyStack.push(ctx);
+        generateTryCatch(node, scope);
+        finallyStack.pop();
+
+        // Normal completion: drop the handler + mark a normal completion, then
+        // fall through into the finalizer.
+        emitPopFinally(scope);
+
+        finally_label.setTarget();
+        ctx.returns.forEach(l => { l.destination = finally_label.destination; });
+
+        scope.generate(node.finalizer);
+        emitEndFinally(scope);
+    }else{
+        generateTryCatch(node, scope);
+    }
 }
 
 export function GenerateSwitchStatement(node: SwitchStatement, scope: Scope){
@@ -675,7 +773,7 @@ export function GenerateSwitchStatement(node: SwitchStatement, scope: Scope){
 
     // A switch is breakable but not continuable (continues: null), so a continue
     // inside a switch resolves to the enclosing loop.
-    let ctx: LoopContext = { breaks: [], continues: null, continueOffset: 0 };
+    let ctx: LoopContext = { breaks: [], continues: null, continueOffset: 0, finallyDepth: finallyStack.length };
     loopStack.push(ctx);
     for(let i = 0; i < cases.length; i++){
         labels[i].setTarget();
@@ -897,7 +995,7 @@ export function GenerateForStatement(node: ForStatement, scope: Scope){
         skip_body_label.setOrigin();
     }
 
-    let ctx: LoopContext = { breaks: [], continues: [], continueOffset: 0 };
+    let ctx: LoopContext = { breaks: [], continues: [], continueOffset: 0, finallyDepth: finallyStack.length };
     loopStack.push(ctx);
     if(node.body) scope.generate(node.body);
     loopStack.pop();
@@ -971,28 +1069,50 @@ export function GenerateUnaryExpression(node: UnaryExpression, scope: Scope){
 
 export function GenerateUpdateExpression(node: UpdateExpression, scope: Scope){
     let argument = node.argument;
+    if(node.operator !== "++" && node.operator !== "--"){
+        throw("Unknown update statement: " + node.operator);
+    }
+    let isPlus = node.operator === "++";
+
     switch(argument.type){
         case "Identifier": {
             let varid = scope.getVarId(argument.name);
-            if(varid === -1){
-                throw("Cant handle global " + node.operator + " yet");
+            if(varid !== -1){
+                // Local variable. Prefix yields the new value, postfix the old.
+                if(isPlus) node.prefix ? emitPrePlusPlus(scope, varid) : emitPlusPlus(scope, varid);
+                else node.prefix ? emitPreMinusMinus(scope, varid) : emitMinusMinus(scope, varid);
+            }else{
+                // Global variable: desugar to globalScope[name]++.
+                emitGlobal(scope);
+                emitString(scope, scope.getStringId(argument.name));
+                emitPropertyUpdate(scope, isPlus, !!node.prefix);
             }
-            switch(node.operator){
-                case "++": {
-                    // Prefix yields the new value, postfix yields the old one.
-                    if(node.prefix) emitPrePlusPlus(scope, varid);
-                    else emitPlusPlus(scope, varid);
-                    break;
+            break;
+        }
+        case "MemberExpression": {
+            let object = argument.object;
+            if(object.type === "Identifier" && object.name === "arguments"){
+                emitArguments(scope);
+            }else if(object.type === "Identifier"){
+                let id = scope.getVarId(object.name);
+                if(id === -1){
+                    emitString(scope, scope.getStringId(object.name));
+                    emitGetGlobalVariableValue(scope);
+                }else{
+                    emitGetVariableValue(scope, id);
                 }
-                case "--": {
-                    if(node.prefix) emitPreMinusMinus(scope, varid);
-                    else emitMinusMinus(scope, varid);
-                    break;
-                }
-                default:
-                    throw("Unknown update statement: " + node.operator);
+            }else{
+                scope.generate(object);
             }
 
+            let property = argument.property;
+            if(property.type === "Identifier" && !argument.computed){
+                emitString(scope, scope.getStringId(property.name));
+            }else{
+                scope.generate(property);
+            }
+
+            emitPropertyUpdate(scope, isPlus, !!node.prefix);
             break;
         }
         default:
@@ -1134,6 +1254,10 @@ export function GenerateProgram(node: Program, scope: Scope){
 }
 
 export function GenerateByteCode(node: Node, scope: Scope){
+    // Control flow (break/continue/finally routing) cannot cross a function
+    // boundary; isolate the stacks for this body and restore them afterwards.
+    let savedControlFlow = saveControlFlowStacks();
+
     //add any functions to the top
     scope.function_set.forEach( fn => {
         //we want to generate params
@@ -1175,4 +1299,6 @@ export function GenerateByteCode(node: Node, scope: Scope){
 
     //walk the the node for all children
     scope.generate(node);
+
+    restoreControlFlowStacks(savedControlFlow);
 }

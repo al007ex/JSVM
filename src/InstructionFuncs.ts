@@ -81,7 +81,10 @@ a[Op.GetGlobalVariableValue] = function(block){
     //block.log("property", prop);
     testIsGlobalPropOrFunction(prop);
     block._stack.push(globalScope[prop])
-    
+
+}
+a[Op.GlobalScope] = function(block){
+    block._stack.push(globalScope);
 }
 a[Op.GetArguments] = function(block){
     let index = block.readI8();
@@ -453,16 +456,103 @@ a[Op.PreMinusMinus] = function(block){
     block._stack.push(--block.definitions[varid].value);
 }
 
+// Read-modify-write on obj[prop] (stack: [obj, prop]). Used for both member
+// updates (obj.x++) and global updates (globalScope[name]++). `+` forces the
+// numeric coercion that ++/-- perform. Postfix pushes the old value, prefix the
+// new one.
+a[Op.PropertyPlusPlus] = function(block){
+    let prop = block._stack.pop();
+    let obj = block._stack.pop();
+    let old = +obj[prop];
+    obj[prop] = old + 1;
+    block._stack.push(old);
+}
+
+a[Op.PropertyMinusMinus] = function(block){
+    let prop = block._stack.pop();
+    let obj = block._stack.pop();
+    let old = +obj[prop];
+    obj[prop] = old - 1;
+    block._stack.push(old);
+}
+
+a[Op.PrePropertyPlusPlus] = function(block){
+    let prop = block._stack.pop();
+    let obj = block._stack.pop();
+    let val = (+obj[prop]) + 1;
+    obj[prop] = val;
+    block._stack.push(val);
+}
+
+a[Op.PrePropertyMinusMinus] = function(block){
+    let prop = block._stack.pop();
+    let obj = block._stack.pop();
+    let val = (+obj[prop]) - 1;
+    obj[prop] = val;
+    block._stack.push(val);
+}
+
 // Exception handling: PushHandler records a catch target (absolute ip) plus the
 // stack depth to unwind to; PopHandler removes it when the try body completes
 // normally. The run loop (Emulator.ts) consumes these on throw.
 a[Op.PushHandler] = function(block){
     let addr = block.readI32();
-    block.k.push([addr, block._stack.length]);
+    block.k.push([addr, block._stack.length, 0]);
 }
 
 a[Op.PopHandler] = function(block){
     block.k.pop();
+}
+
+// try/finally. A finally handler on `k` is tagged with 1 so the run loop knows
+// to route an in-flight exception through the finalizer (see Emulator.run).
+// Completion records on `block.pending` are [type, value]: 0 normal, 1 throw,
+// 2 return.
+a[Op.PushFinally] = function(block){
+    let addr = block.readI32();
+    block.k.push([addr, block._stack.length, 1]);
+}
+
+// Reached only on normal completion of the try body: drop the handler and mark
+// a normal completion before falling into the finalizer.
+a[Op.PopFinally] = function(block){
+    block.k.pop();
+    block.pending.push([0, undefined]);
+}
+
+// A return inside a try body routes here first: capture the return value as a
+// pending completion and drop handlers up to and including the innermost finally
+// (so its own finalizer's exceptions don't loop back into it), then jump to the
+// finalizer.
+a[Op.ReturnFinally] = function(block){
+    let value = block._stack.pop();
+    while(block.k.length){
+        let h = block.k.pop();
+        if(h[2] === 1) break;   // removed the innermost finally handler
+    }
+    block.pending.push([2, value]);
+}
+
+// End of a finalizer: act on the pending completion recorded for it.
+a[Op.EndFinally] = function(block){
+    let record = block.pending.pop();
+    if(record[0] === 1){
+        throw record[1];                       // re-raise; run loop finds the next handler
+    }
+    if(record[0] === 2){
+        // Deferred return: run any enclosing finalizer before actually returning.
+        while(block.k.length){
+            let h = block.k.pop();
+            if(h[2] === 1){
+                block.pending.push(record);    // carry the return through it
+                block.ip = h[0];
+                return;
+            }
+        }
+        block.returnRegister = record[1];      // no more finalizers: perform the return
+        block.U++;
+    }
+    // record[0] === 0 (normal): fall through past the finalizer
 }
 
 a[Op.RaiseExponent] = function(block){

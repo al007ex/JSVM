@@ -548,6 +548,7 @@ class Block{
     public M: Array<any> = [];
     public returnRegister: undefined = undefined;
     public k: Array<any> = [];
+    public pending: Array<any> = [];
     public U: number = 1;
     public I: Array<any> = [];
 
@@ -664,6 +665,7 @@ class Block{
                 that.args = arguments;
                 that._stack = [];
                 that.k = [];
+                that.pending = [];
 
                 for (let i = 0; i < that.args.length; i++) that._stack[that.args.length - i - 1] = that.args[i];
 
@@ -674,12 +676,14 @@ class Block{
             }
 
             let savedK = that.k;
+            let savedPending = that.pending;
             let i = [that.definitions, that._stack, that.startOffset, that.S, that.ip, that.U, that.scope, that.args, that.returnRegister, that.I, that.M];
             
             that.definitions = [];
             that._stack = [];
             that.M = [];
             that.k = [];
+            that.pending = [];
             that.S = [];
             that.U = 0;
             that.returnRegister = undefined;
@@ -709,6 +713,7 @@ class Block{
                 that.definitions = i[0];
                 that._stack = i[1];
                 that.k = savedK;
+                that.pending = savedPending;
                 that.S = i[3];
                 that.ip = i[4];
                 that.U = i[5];
@@ -732,13 +737,19 @@ class Block{
                 }
             }catch(err){
                 if(this.k.length){
-                    // Nearest active catch handler: [handlerIp, stackDepthAtTry].
+                    // Nearest active handler: [handlerIp, stackDepthAtTry, isFinally].
                     let handler = this.k.pop();
-                    this._stack.length = handler[1];   // unwind partial expression state
-                    this._stack.push(err);             // expose thrown value to the catch body
-                    this.ip = handler[0];              // resume at the catch handler
+                    this._stack.length = handler[1];       // unwind partial expression state
+                    if(handler[2]){
+                        // finally: run the finalizer, then EndFinally re-raises err.
+                        this.pending.push([1, err]);
+                    }else{
+                        // catch: expose the thrown value to the catch body.
+                        this._stack.push(err);
+                    }
+                    this.ip = handler[0];                  // resume at the handler
                 }else{
-                    throw err;                         // no handler here; propagate to caller
+                    throw err;                             // no handler here; propagate to caller
                 }
             }
         }
