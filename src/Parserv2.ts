@@ -1,7 +1,7 @@
 
 import {parse} from "acorn";
 import { traverse } from "estraverse";
-import { GenerateArrayExpression, GenerateAssignmentExpression, GenerateBinaryExpression, GenerateBlockStatement, GenerateBreakStatement, GenerateContinueStatement, GenerateByteCode, GenerateCallExpression, GenerateConditionalExpression, GenerateDebuggerStatement, GenerateExpressionStatement, GenerateForStatement, GenerateFunctionDeclaration, GenerateFunctionExpression, GenerateIdentifier, GenerateIfStatement, GenerateLiteral, GenerateLogicalExpression, GenerateMemberExpression, GenerateNewExpression, GenerateObjectExpression, GenerateProgram, GenerateProperty, GenerateReturnStatement, GenerateSequenceExpression, GenerateSwitchStatement, GenerateThisExpression, GenerateThrowStatement, GenerateTryStatement, GenerateUnaryExpression, GenerateUpdateExpression, GenerateVariableDeclaration, GenerateVariableDeclarator, GenerateWhileStatement } from "./ASTCodegen";
+import { GenerateArrayExpression, GenerateAssignmentExpression, GenerateBinaryExpression, GenerateBlockStatement, GenerateBreakStatement, GenerateContinueStatement, GenerateByteCode, GenerateCallExpression, GenerateConditionalExpression, GenerateDebuggerStatement, GenerateDoWhileStatement, GenerateExpressionStatement, GenerateForStatement, GenerateFunctionDeclaration, GenerateFunctionExpression, GenerateIdentifier, GenerateIfStatement, GenerateLiteral, GenerateLogicalExpression, GenerateMemberExpression, GenerateNewExpression, GenerateObjectExpression, GenerateProgram, GenerateProperty, GenerateReturnStatement, GenerateSequenceExpression, GenerateSwitchStatement, GenerateThisExpression, GenerateThrowStatement, GenerateTryStatement, GenerateUnaryExpression, GenerateUpdateExpression, GenerateVariableDeclaration, GenerateVariableDeclarator, GenerateWhileStatement } from "./ASTCodegen";
 import { Label } from "./Label";
 import { Strings } from "./Strings";
 import { BlockStatement, ThrowStatement, SequenceExpression, ConditionalExpression, TryStatement, BreakStatement, SwitchStatement, LogicalExpression, NewExpression, DebuggerStatement, ArrayExpression, ThisExpression, FunctionExpression, Property, MemberExpression, ForStatement, ObjectExpression, UnaryExpression, UpdateExpression, ReturnStatement, CallExpression, FunctionDeclaration, Identifier, AssignmentExpression, VariableDeclaration, WhileStatement, BinaryExpression, Literal, Node, VariableDeclarator, IfStatement, Program, ExpressionStatement } from "estree";
@@ -221,6 +221,9 @@ export class Scope{
                 break;
             case "WhileStatement":
                 GenerateWhileStatement(node, this);
+                break;
+            case "DoWhileStatement":
+                GenerateDoWhileStatement(node, this);
                 break;
             case "VariableDeclaration":
                 GenerateVariableDeclaration(node, this);

@@ -1,5 +1,6 @@
 import { compileByteCode, resetScopeState } from "./Parserv2";
 import { resetCodegenState } from "./ASTCodegen";
+import { transpileForVm } from "./Transpile";
 import { parse } from "acorn";
 import * as fs from "fs";
 import * as path from "path";
@@ -216,7 +217,7 @@ export async function compileToBundles(code: string, shouldMinify: boolean): Pro
     resetOpcodeState();
     resetCodegenState();
 
-    const { raw, scopes } = compileByteCode(code);
+    const { raw, scopes } = compileByteCode(transpileForVm(code));
 
     // Tier 1: per-build position-keyed stream cipher over the whole bytecode
     // buffer. Opcodes, operands and the string table all live inside `raw`, so

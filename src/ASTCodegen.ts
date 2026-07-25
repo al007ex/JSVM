@@ -339,6 +339,53 @@ export function emitMakeObject(scope: Scope, props: number){
     __writeI32(scope, props);
 }
 
+export function emitDefineAccessor(scope: Scope, isGetter: boolean){
+    __writeI8(scope, Op.DefineAccessor);
+    __writeI8(scope, isGetter ? 1 : 0);
+}
+
+export function emitCompoundAssignProperty(scope: Scope, opId: number){
+    __writeI8(scope, Op.CompoundAssignProperty);
+    __writeI8(scope, opId);
+}
+
+// Arithmetic/bitwise compound assignment operators (excludes logical &&=/||=/??=,
+// which short-circuit and are not handled here). The op ids must stay in sync
+// with the CompoundAssignProperty handler in InstructionFuncs.ts.
+const COMPOUND_OPS: { [op: string]: number } = {
+    "+=": 0, "-=": 1, "*=": 2, "/=": 3, "%=": 4, "**=": 5,
+    "<<=": 6, ">>=": 7, ">>>=": 8, "&=": 9, "|=": 10, "^=": 11
+};
+
+function isCompoundAssign(operator: string): boolean {
+    return Object.prototype.hasOwnProperty.call(COMPOUND_OPS, operator);
+}
+
+function compoundOpId(operator: string): number {
+    if(!isCompoundAssign(operator)) throw("Unsupported compound assignment operator: " + operator);
+    return COMPOUND_OPS[operator];
+}
+
+// Emit the binary op corresponding to a compound assignment (assumes the two
+// operands are already on the stack, left below right).
+function emitCompoundBinaryOp(scope: Scope, operator: string){
+    switch(operator){
+        case "+=": emitAdd(scope); break;
+        case "-=": emitSub(scope); break;
+        case "*=": emitMultiply(scope); break;
+        case "/=": emitDivide(scope); break;
+        case "%=": emitRemainder(scope); break;
+        case "**=": emitRaiseExponent(scope); break;
+        case "<<=": emitBitLeftShift(scope); break;
+        case ">>=": emitBitRightShift(scope); break;
+        case ">>>=": emitBitZeroFillRightShift(scope); break;
+        case "&=": emitBitAnd(scope); break;
+        case "|=": emitBitOr(scope); break;
+        case "^=": emitBitXOR(scope); break;
+        default: throw("Unsupported compound assignment operator: " + operator);
+    }
+}
+
 export function emitObjectPropertyCall(scope: Scope, totalArgs: number){
     __writeI8(scope, Op.ObjectPropertyCall);
     __writeI8(scope, totalArgs);
@@ -404,6 +451,32 @@ export function GenerateWhileStatement(node: WhileStatement, scope: Scope){
     // break -> after the loop; continue -> the test at the top.
     ctx.breaks.forEach(label => label.setTarget());
     ctx.continues!.forEach(label => { label.destination = continueOffset; });
+}
+
+export function GenerateDoWhileStatement(node: any, scope: Scope){
+    // do { body } while(test): run the body, then test; loop back while truthy.
+    let back_label = scope.makeLabel(Uint32Array.BYTES_PER_ELEMENT);
+    back_label.setTarget();   // body start = back-jump destination
+
+    let ctx: LoopContext = { breaks: [], continues: [], continueOffset: 0, finallyDepth: finallyStack.length };
+    loopStack.push(ctx);
+    scope.generate(node.body);
+    loopStack.pop();
+
+    // continue jumps to the test (evaluated after the body each iteration).
+    let continueOffset = scope.offset;
+    ctx.continues!.forEach(label => { label.destination = continueOffset; });
+
+    scope.generate(node.test);
+    emitJumpIfFalse(scope);
+    let exit_label = scope.makeLabel(Uint32Array.BYTES_PER_ELEMENT);
+    exit_label.setOrigin();   // test falsy -> fall out of the loop
+
+    emitJMP(scope);
+    back_label.setOrigin();   // test truthy -> jump back to the body
+
+    exit_label.setTarget();
+    ctx.breaks.forEach(label => label.setTarget());
 }
 
 export function GenerateThisExpression(node: ThisExpression, scope: Scope){
@@ -819,92 +892,55 @@ export function GenerateAssignmentExpression(node: AssignmentExpression, scope: 
             default:
                 throw("Invalid assignment expression type");
         }
-    }else if(node.operator === "+=" || node.operator === "-=" || node.operator === "%=" || node.operator === "^=" || node.operator === "&=" || node.operator === "|="){
+    }else if(isCompoundAssign(node.operator)){
+        // x OP= right  ==>  x = x OP right, reading x once.
         switch(left.type){
-            case "Identifier":
+            case "Identifier": {
                 let id = scope.getVarId(left.name);
                 if(id === -1){
                     let stringid = scope.getStringId(left.name);
                     emitString(scope, stringid);
-                    emitGetGlobalVariableValue(scope);
-                    scope.generate(node.right);
-                    switch(node.operator){
-                        case "^=":
-                            emitBitXOR(scope);
-                            break;
-                        case "&=":
-                            emitBitAnd(scope);
-                            break;
-                        case "%=":
-                            emitRemainder(scope);
-                            break;
-                        case "-=":
-                            emitSub(scope);
-                            break;
-                        case "|=":
-                            emitBitOr(scope);
-                            break;
-                        case "+=":
-                            emitAdd(scope);
-                            break;
-                        default:
-                            throw("Unknown type");
-                    }
+                    emitGetGlobalVariableValue(scope);   // push old value
+                    scope.generate(node.right);          // push right
+                    emitCompoundBinaryOp(scope, node.operator);
                     emitString(scope, stringid);
                     emitAssignValueToGlobal(scope);
                 }else{
-                    emitGetVariableValue(scope, id);
-                    scope.generate(node.right);
-                    switch(node.operator){
-                        case "^=":
-                            emitBitXOR(scope);
-                            break;
-                        case "&=":
-                            emitBitAnd(scope);
-                            break;
-                        case "%=":
-                            emitRemainder(scope);
-                            break;
-                        case "-=":
-                            emitSub(scope);
-                            break;
-                        case "|=":
-                            emitBitOr(scope);
-                            break;
-                        case "+=":
-                            emitAdd(scope);
-                            break;
-                        default:
-                            throw("Unknown type");
-                    }
+                    emitGetVariableValue(scope, id);     // push old value
+                    scope.generate(node.right);          // push right
+                    emitCompoundBinaryOp(scope, node.operator);
                     emitAssignValue(scope, id);
                 }
                 break;
+            }
             case "MemberExpression": {
-
-                scope.generate(node.right);
+                // Evaluate obj and prop once, then read-modify-write in the VM.
                 scope.generate(left.object);
                 let property = left.property;
-                //if its computed, dont run that shit
                 if(property.type === "Identifier" && !left.computed){
-                    let stringid = scope.getStringId(property.name);
-                    emitString(scope, stringid);
+                    emitString(scope, scope.getStringId(property.name));
                 }else{
                     scope.generate(left.property);
                 }
-                emitSetObjectProperty(scope);
+                scope.generate(node.right);
+                emitCompoundAssignProperty(scope, compoundOpId(node.operator));
                 break;
             }
             default:
                 throw("Invalid assignment expression type");
         }
     }else{
-        throw("Unsupported assignment operator");
+        throw("Unsupported assignment operator: " + node.operator);
     }
 }
 
 export function GenerateVariableDeclarator(node: VariableDeclarator, scope: Scope){
-    if(node.init) scope.generate(node.init);
+    // `var x;` with no initializer must leave the binding at its current value
+    // (undefined on first entry) — NOT assign whatever happens to be on the stack.
+    // Emitting AssignValue here would pop a leftover value, e.g. `var i = -1, x;`
+    // would wrongly set x to -1.
+    if(!node.init) return;
+    scope.generate(node.init);
     switch(node.id.type){
         case "Identifier": {
             let id = scope.getVarId(node.id.name);
@@ -957,16 +993,23 @@ export function GenerateMemberExpression(node: MemberExpression, scope: Scope){
     emitGetObjectProperty(scope);
 }
 
-export function GenerateProperty(node: Property, scope: Scope){
-    let key = node.key;
-    switch(key.type){
-        case "Identifier":
-            let stringid = scope.getStringId(key.name);
-            emitString(scope, stringid);
-            break;
-        default:
-            throw("Unknow property @generateProperty");
+// Push a property key onto the stack. Computed keys ({ [expr]: v }) evaluate the
+// expression; identifier keys ({ x: v }) use the name literally; literal keys
+// ({ "a": v }, { 1: v }) use the literal value.
+function emitPropertyKey(node: Property, scope: Scope){
+    if((node as any).computed){
+        scope.generate(node.key as any);
+    }else if(node.key.type === "Identifier"){
+        emitString(scope, scope.getStringId(node.key.name));
+    }else if(node.key.type === "Literal"){
+        scope.generate(node.key as any);
+    }else{
+        throw("Unsupported property key @emitPropertyKey: " + node.key.type);
     }
+}
+
+export function GenerateProperty(node: Property, scope: Scope){
+    emitPropertyKey(node, scope);
     scope.generate(node.value);
 }
 
@@ -976,8 +1019,26 @@ export function GenerateArrayExpression(node: ArrayExpression, scope: Scope){
 }
 
 export function GenerateObjectExpression(node: ObjectExpression, scope: Scope){
-    node.properties.forEach(child => scope.generate(child));
-    emitMakeObject(scope, node.properties.length);
+    // Data properties are collected into the object up front; accessor properties
+    // (get/set) are applied afterwards via DefineAccessor.
+    let dataProps: any[] = [];
+    let accessors: any[] = [];
+    node.properties.forEach((child: any) => {
+        if(child.type !== "Property") throw("Unsupported object member: " + child.type);
+        if(child.kind === "get" || child.kind === "set") accessors.push(child);
+        else dataProps.push(child);
+    });
+
+    dataProps.forEach(child => scope.generate(child));
+    emitMakeObject(scope, dataProps.length);
+
+    // The object stays on the stack; each accessor consumes [obj, key, fn] and
+    // leaves the object back on top for the next one.
+    accessors.forEach(acc => {
+        emitPropertyKey(acc, scope);
+        scope.generate(acc.value);
+        emitDefineAccessor(scope, acc.kind === "get");
+    });
 }
 
 export function GenerateForStatement(node: ForStatement, scope: Scope){

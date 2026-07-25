@@ -90,6 +90,8 @@ export const _Op: { [key: string]: number } = {
     PushFinally: id++,
     PopFinally: id++,
     ReturnFinally: id++,
+    DefineAccessor: id++,
+    CompoundAssignProperty: id++,
 };
 export const OpRemap: { [key: string]: number } = {};
 export const Op: { [key: string]: number } = {};
@@ -203,4 +205,6 @@ export const OpcodeString: { [key: number]: string } = {
     [_Op.PushFinally] : "PushFinally",
     [_Op.PopFinally] : "PopFinally",
     [_Op.ReturnFinally] : "ReturnFinally",
+    [_Op.DefineAccessor] : "DefineAccessor",
+    [_Op.CompoundAssignProperty] : "CompoundAssignProperty",
 };

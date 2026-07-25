@@ -159,12 +159,53 @@ a[Op.This] = function(block){
     block._stack.push(block.scope);
 }
 
+// Object-literal getter/setter. Stack: [obj, key, fn]; operand: 1 for get, 0 for
+// set. Uses __defineGetter__/__defineSetter__ rather than Object.defineProperty
+// with a descriptor literal: those are plain method calls (safe from the
+// property-mangling obfuscator, unlike the descriptor keys configurable/
+// enumerable/get/set), and they merge — defining a getter keeps an existing
+// setter and vice versa.
+a[Op.DefineAccessor] = function(block){
+    let isGetter = block.readI8();
+    let fn = block._stack.pop();
+    let key = block._stack.pop();
+    let obj = block._stack.pop();
+    if(isGetter) obj.__defineGetter__(key, fn);
+    else obj.__defineSetter__(key, fn);
+    block._stack.push(obj);
+}
+
 a[Op.SetObjectProperty] = function(block){
-    
+
     let property = block._stack.pop();
     let obj = block._stack.pop();
     let value = block._stack.pop();
     block._stack.push(obj[property] = value);
+}
+
+// Compound assignment to a member: obj[prop] = obj[prop] OP right, evaluating obj
+// and prop once. Stack: [obj, prop, right]; operand: an op id (see compoundOpId
+// in ASTCodegen.ts). Leaves the assigned value on the stack.
+a[Op.CompoundAssignProperty] = function(block){
+    let op = block.readI8();
+    let right = block._stack.pop();
+    let prop = block._stack.pop();
+    let obj = block._stack.pop();
+    let cur = obj[prop];
+    let result;
+    if(op === 0) result = cur + right;
+    else if(op === 1) result = cur - right;
+    else if(op === 2) result = cur * right;
+    else if(op === 3) result = cur / right;
+    else if(op === 4) result = cur % right;
+    else if(op === 5) result = cur ** right;
+    else if(op === 6) result = cur << right;
+    else if(op === 7) result = cur >> right;
+    else if(op === 8) result = cur >>> right;
+    else if(op === 9) result = cur & right;
+    else if(op === 10) result = cur | right;
+    else result = cur ^ right; // 11
+    block._stack.push(obj[prop] = result);
 }
 a[Op.AssignValue] = function(block){
     let index = block.readI32();
