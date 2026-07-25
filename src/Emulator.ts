@@ -663,6 +663,7 @@ class Block{
                 //copy arguments onto the _stack first on, last off style
                 that.args = arguments;
                 that._stack = [];
+                that.k = [];
 
                 for (let i = 0; i < that.args.length; i++) that._stack[that.args.length - i - 1] = that.args[i];
 
@@ -672,6 +673,7 @@ class Block{
                 return that.run();
             }
 
+            let savedK = that.k;
             let i = [that.definitions, that._stack, that.startOffset, that.S, that.ip, that.U, that.scope, that.args, that.returnRegister, that.I, that.M];
             
             that.definitions = [];
@@ -697,45 +699,50 @@ class Block{
             that.scope = this;
             that.ip = scope[4];
 
-            var f = that.run();
+            var f;
+            try {
+                f = that.run();
+            } finally {
+                // Restore the caller's frame even if run() threw, so an exception
+                // propagating out through a recursive call still finds the caller's
+                // handler stack (k) and other state intact.
+                that.definitions = i[0];
+                that._stack = i[1];
+                that.k = savedK;
+                that.S = i[3];
+                that.ip = i[4];
+                that.U = i[5];
+                that.scope = i[6];
+                that.args = i[7];
+                that.returnRegister = i[8];
+                that.I = i[9];
+                that.M = i[10];
+            }
 
-            that.definitions = i[0];
-            that._stack = i[1];
-            that.k = i[2];
-            that.S = i[3];
-            that.ip = i[4];
-            that.U = i[5];
-            that.scope = i[6];
-            that.args = i[7];
-            that.returnRegister = i[8];
-            that.I = i[9];
-            that.M = i[10];
-    
             return f;
         });
       }
 
     run(){
-        try{
-            for (; this.U < 1;) {
-             //   this.log("[" + this.ip + "] " + OpcodeString[bytes[this.ip]], bytes[this.ip]);
-                __funcs[this._b(this.ip++)](this);
+        for (; this.U < 1;) {
+            try{
+                for (; this.U < 1;) {
+                 //   this.log("[" + this.ip + "] " + OpcodeString[bytes[this.ip]], bytes[this.ip]);
+                    __funcs[this._b(this.ip++)](this);
+                }
+            }catch(err){
+                if(this.k.length){
+                    // Nearest active catch handler: [handlerIp, stackDepthAtTry].
+                    let handler = this.k.pop();
+                    this._stack.length = handler[1];   // unwind partial expression state
+                    this._stack.push(err);             // expose thrown value to the catch body
+                    this.ip = handler[0];              // resume at the catch handler
+                }else{
+                    throw err;                         // no handler here; propagate to caller
+                }
             }
-            return this.returnRegister;
-        }catch(err){
-            if(this.k.length){
-                //get the last value of k
-                let n = this.k[this.k.length - 1];
-                //roll back the offset to someplace
-                this.ip = n[0];
-                //set to -1
-                n[0] = -1;
-                //package the _stack back up WTF?
-                this._stack = [this._stack];
-                return this.run();
-            }
-            throw err;
         }
+        return this.returnRegister;
     }
 }
 

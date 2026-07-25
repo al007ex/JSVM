@@ -78,6 +78,11 @@ export const _Op: { [key: string]: number } = {
     Regex: id++,
 
     F64: id++,
+
+    PrePlusPlus: id++,
+    PreMinusMinus: id++,
+    PushHandler: id++,
+    PopHandler: id++,
 };
 export const OpRemap: { [key: string]: number } = {};
 export const Op: { [key: string]: number } = {};
@@ -181,4 +186,8 @@ export const OpcodeString: { [key: number]: string } = {
     [_Op.Duplicate] : "Duplicate",
     [_Op.Regex] : "Regex",
     [_Op.F64] : "Load F64",
+    [_Op.PrePlusPlus] : "PrePlusPlus",
+    [_Op.PreMinusMinus] : "PreMinusMinus",
+    [_Op.PushHandler] : "PushHandler",
+    [_Op.PopHandler] : "PopHandler",
 };

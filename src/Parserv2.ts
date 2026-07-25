@@ -1,7 +1,7 @@
 
 import {parse} from "acorn";
 import { traverse } from "estraverse";
-import { GenerateArrayExpression, GenerateAssignmentExpression, GenerateBinaryExpression, GenerateBlockStatement, GenerateBreakStatement, GenerateByteCode, GenerateCallExpression, GenerateConditionalExpression, GenerateDebuggerStatement, GenerateExpressionStatement, GenerateForStatement, GenerateFunctionDeclaration, GenerateFunctionExpression, GenerateIdentifier, GenerateIfStatement, GenerateLiteral, GenerateLogicalExpression, GenerateMemberExpression, GenerateNewExpression, GenerateObjectExpression, GenerateProgram, GenerateProperty, GenerateReturnStatement, GenerateSequenceExpression, GenerateSwitchStatement, GenerateThisExpression, GenerateThrowStatement, GenerateTryStatement, GenerateUnaryExpression, GenerateUpdateExpression, GenerateVariableDeclaration, GenerateVariableDeclarator, GenerateWhileStatement } from "./ASTCodegen";
+import { GenerateArrayExpression, GenerateAssignmentExpression, GenerateBinaryExpression, GenerateBlockStatement, GenerateBreakStatement, GenerateContinueStatement, GenerateByteCode, GenerateCallExpression, GenerateConditionalExpression, GenerateDebuggerStatement, GenerateExpressionStatement, GenerateForStatement, GenerateFunctionDeclaration, GenerateFunctionExpression, GenerateIdentifier, GenerateIfStatement, GenerateLiteral, GenerateLogicalExpression, GenerateMemberExpression, GenerateNewExpression, GenerateObjectExpression, GenerateProgram, GenerateProperty, GenerateReturnStatement, GenerateSequenceExpression, GenerateSwitchStatement, GenerateThisExpression, GenerateThrowStatement, GenerateTryStatement, GenerateUnaryExpression, GenerateUpdateExpression, GenerateVariableDeclaration, GenerateVariableDeclarator, GenerateWhileStatement } from "./ASTCodegen";
 import { Label } from "./Label";
 import { Strings } from "./Strings";
 import { BlockStatement, ThrowStatement, SequenceExpression, ConditionalExpression, TryStatement, BreakStatement, SwitchStatement, LogicalExpression, NewExpression, DebuggerStatement, ArrayExpression, ThisExpression, FunctionExpression, Property, MemberExpression, ForStatement, ObjectExpression, UnaryExpression, UpdateExpression, ReturnStatement, CallExpression, FunctionDeclaration, Identifier, AssignmentExpression, VariableDeclaration, WhileStatement, BinaryExpression, Literal, Node, VariableDeclarator, IfStatement, Program, ExpressionStatement } from "estree";
@@ -163,6 +163,14 @@ export class Scope{
                         scope.functionExpression(node);
                         return this.skip();
                     }
+                    case "CatchClause": {
+                        // Bind the catch parameter as a (function-scoped) variable
+                        // so the handler body can reference the caught value.
+                        if(node.param && node.param.type === "Identifier"){
+                            scope.varDeclaration(node.param.name);
+                        }
+                        break;
+                    }
                 }
             }
         })
@@ -258,6 +266,9 @@ export class Scope{
                 break;
             case "BreakStatement":
                 GenerateBreakStatement(node, this);
+                break;
+            case "ContinueStatement":
+                GenerateContinueStatement(node, this);
                 break;
             case "ObjectExpression":
                 GenerateObjectExpression(node, this);

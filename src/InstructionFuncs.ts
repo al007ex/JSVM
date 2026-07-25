@@ -171,17 +171,21 @@ a[Op.AssignValue] = function(block){
     
 }
 
+// Short-circuit && / || are driven by the surrounding jump structure in
+// codegen: this op is only reached on the "evaluate the right operand" path,
+// where the stack holds [leftDuplicate, right]. The result must be the right
+// operand's value, so we discard the leftover left duplicate and keep the top.
 a[Op.Or] = function(block){
     let r = block._stack.pop();
-    let l = block._stack.pop();
-    block._stack.push(r || l);
+    block._stack.pop();
+    block._stack.push(r);
     //block.log("||")
 }
 
 a[Op.And] = function(block){
     let r = block._stack.pop();
-    let l = block._stack.pop();
-    block._stack.push(r && l);
+    block._stack.pop();
+    block._stack.push(r);
     //block.log("&&")
 }
 
@@ -432,6 +436,33 @@ a[Op.BitZeroFillRightShift] = function(block) {
 a[Op.PlusPlus] = function(block){
     let varid = block.readI32();
     block._stack.push(block.definitions[varid].value++);
+}
+
+a[Op.MinusMinus] = function(block){
+    let varid = block.readI32();
+    block._stack.push(block.definitions[varid].value--);
+}
+
+a[Op.PrePlusPlus] = function(block){
+    let varid = block.readI32();
+    block._stack.push(++block.definitions[varid].value);
+}
+
+a[Op.PreMinusMinus] = function(block){
+    let varid = block.readI32();
+    block._stack.push(--block.definitions[varid].value);
+}
+
+// Exception handling: PushHandler records a catch target (absolute ip) plus the
+// stack depth to unwind to; PopHandler removes it when the try body completes
+// normally. The run loop (Emulator.ts) consumes these on throw.
+a[Op.PushHandler] = function(block){
+    let addr = block.readI32();
+    block.k.push([addr, block._stack.length]);
+}
+
+a[Op.PopHandler] = function(block){
+    block.k.pop();
 }
 
 a[Op.RaiseExponent] = function(block){

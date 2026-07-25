@@ -1,4 +1,4 @@
-import { BlockStatement, ThrowStatement, SequenceExpression, ConditionalExpression, TryStatement, BreakStatement, SwitchStatement, LogicalExpression, NewExpression, DebuggerStatement, ArrayExpression, ThisExpression, FunctionExpression, Property, MemberExpression, ForStatement, ObjectExpression, UnaryExpression, UpdateExpression, ReturnStatement, CallExpression, FunctionDeclaration, Identifier, AssignmentExpression, VariableDeclaration, WhileStatement, BinaryExpression, Literal, Node, VariableDeclarator, IfStatement, Program, ExpressionStatement } from "estree";
+import { BlockStatement, ThrowStatement, SequenceExpression, ConditionalExpression, TryStatement, BreakStatement, ContinueStatement, SwitchStatement, LogicalExpression, NewExpression, DebuggerStatement, ArrayExpression, ThisExpression, FunctionExpression, Property, MemberExpression, ForStatement, ObjectExpression, UnaryExpression, UpdateExpression, ReturnStatement, CallExpression, FunctionDeclaration, Identifier, AssignmentExpression, VariableDeclaration, WhileStatement, BinaryExpression, Literal, Node, VariableDeclarator, IfStatement, Program, ExpressionStatement } from "estree";
 import { Op } from "./Op";
 import { Scope } from "./Parserv2";
 import { f64Bytes, i32Bytes, i8Bytes, isValidI32, isValidI8 } from "./Utils";
@@ -209,6 +209,24 @@ export function emitMinusMinus(scope: Scope, varid){
     __writeI32(scope, varid);
 }
 
+export function emitPrePlusPlus(scope: Scope, varid){
+    __writeI8(scope, Op.PrePlusPlus);
+    __writeI32(scope, varid);
+}
+
+export function emitPreMinusMinus(scope: Scope, varid){
+    __writeI8(scope, Op.PreMinusMinus);
+    __writeI32(scope, varid);
+}
+
+export function emitPushHandler(scope: Scope){
+    __writeI8(scope, Op.PushHandler);
+}
+
+export function emitPopHandler(scope: Scope){
+    __writeI8(scope, Op.PopHandler);
+}
+
 export function emitMultiply(scope: Scope){
     __writeI8(scope, Op.Multiply);
 }
@@ -337,25 +355,33 @@ export function GenerateLiteral(node: Literal, scope: Scope){
 }
 
 export function GenerateWhileStatement(node: WhileStatement, scope: Scope){
-    
+
+    // continue re-evaluates the test, which sits at the top of the loop.
+    let continueOffset = scope.offset;
     const test_label = scope.makeLabel(Uint32Array.BYTES_PER_ELEMENT);
-    
+
     test_label.setTarget();
 
     scope.generate(node.test);
-    
+
     emitJumpIfFalse(scope);
 
     let body_label = scope.makeLabel(Uint32Array.BYTES_PER_ELEMENT);
     body_label.setOrigin();
 
+    let ctx: LoopContext = { breaks: [], continues: [], continueOffset };
+    loopStack.push(ctx);
     scope.generate(node.body);
+    loopStack.pop();
 
     emitJMP(scope);
     test_label.setOrigin();
 
     body_label.setTarget();
-    
+
+    // break -> after the loop; continue -> the test at the top.
+    ctx.breaks.forEach(label => label.setTarget());
+    ctx.continues!.forEach(label => { label.destination = continueOffset; });
 }
 
 export function GenerateThisExpression(node: ThisExpression, scope: Scope){
@@ -552,25 +578,71 @@ export function GenerateLogicalExpression(node: LogicalExpression, scope: Scope)
     }
 }
 
-const break_labels = [];
+// Stack of enclosing loops/switches, innermost last. `breaks` collects jumps
+// that should land after the construct; `continues` collects jumps to the loop's
+// continue point (null for switch, which is breakable but not continuable).
+type LoopContext = { breaks: any[]; continues: any[] | null; continueOffset: number };
+const loopStack: LoopContext[] = [];
 
-// Clear any break labels left over from a previous compile so the module can be
+// Clear any loop context left over from a previous compile so the module can be
 // reused across multiple compilations in one process.
 export function resetCodegenState(){
-    break_labels.length = 0;
+    loopStack.length = 0;
 }
 
-//lets pray that its inside the switch
 export function GenerateBreakStatement(node: BreakStatement, scope: Scope){
-    let break_label = scope.makeLabel(Uint32Array.BYTES_PER_ELEMENT);
+    if(loopStack.length === 0) throw("break statement outside of a loop or switch");
+    let ctx = loopStack[loopStack.length - 1];
     emitJMP(scope);
+    let break_label = scope.makeLabel(Uint32Array.BYTES_PER_ELEMENT);
     break_label.setOrigin();
-    break_labels.push(break_label);
+    ctx.breaks.push(break_label);
+}
+
+export function GenerateContinueStatement(node: ContinueStatement, scope: Scope){
+    // continue targets the nearest enclosing loop, skipping any switch in between.
+    let ctx: LoopContext | null = null;
+    for(let i = loopStack.length - 1; i >= 0; i--){
+        if(loopStack[i].continues){ ctx = loopStack[i]; break; }
+    }
+    if(!ctx) throw("continue statement outside of a loop");
+    emitJMP(scope);
+    let continue_label = scope.makeLabel(Uint32Array.BYTES_PER_ELEMENT);
+    continue_label.setOrigin();
+    ctx.continues.push(continue_label);
 }
 
 export function GenerateTryStatement(node: TryStatement, scope: Scope){
-    //throTryStatement
-    scope.generate(node.block);
+    let handler = node.handler;
+    if(handler){
+        // Register a catch handler for the duration of the try block. On a throw
+        // the VM unwinds to it and pushes the thrown value onto the stack.
+        emitPushHandler(scope);
+        let catch_label = scope.makeLabel(Uint32Array.BYTES_PER_ELEMENT);
+        catch_label.setOrigin();
+
+        scope.generate(node.block);
+        emitPopHandler(scope);
+
+        emitJMP(scope);
+        let after_catch = scope.makeLabel(Uint32Array.BYTES_PER_ELEMENT);
+        after_catch.setOrigin();
+
+        catch_label.setTarget();
+        // The thrown value is on top of the stack; bind it to the catch param.
+        if(handler.param && handler.param.type === "Identifier"){
+            let varid = scope.getVarId(handler.param.name);
+            emitAssignValue(scope, varid);
+        }
+        scope.generate(handler.body);
+
+        after_catch.setTarget();
+    }else{
+        scope.generate(node.block);
+    }
+
+    // NOTE: finally currently runs on the normal and caught paths, but not while
+    // an exception propagates uncaught. Full unwind-time finally is a known gap.
     if(node.finalizer) scope.generate(node.finalizer);
 }
 
@@ -601,16 +673,19 @@ export function GenerateSwitchStatement(node: SwitchStatement, scope: Scope){
     emitJMP(scope);
     jump_missed_cases.setOrigin();
 
+    // A switch is breakable but not continuable (continues: null), so a continue
+    // inside a switch resolves to the enclosing loop.
+    let ctx: LoopContext = { breaks: [], continues: null, continueOffset: 0 };
+    loopStack.push(ctx);
     for(let i = 0; i < cases.length; i++){
-        
         labels[i].setTarget();
         var _case = cases[i];
         _case.consequent.forEach(child => scope.generate(child));
     }
+    loopStack.pop();
 
-    break_labels.forEach(label => label.setTarget());
-    break_labels.length = 0;    
     jump_missed_cases.setTarget();
+    ctx.breaks.forEach(label => label.setTarget());
 }
 
 export function GenerateAssignmentExpression(node: AssignmentExpression, scope: Scope){
@@ -812,17 +887,33 @@ export function GenerateForStatement(node: ForStatement, scope: Scope){
     let pre_test_label = scope.makeLabel(Uint32Array.BYTES_PER_ELEMENT);
     pre_test_label.setTarget();
 
-    if(node.test) scope.generate(node.test);
-    emitJumpIfFalse(scope)
-    let skip_body_label = scope.makeLabel(Uint32Array.BYTES_PER_ELEMENT);
-    skip_body_label.setOrigin();
+    // A missing test means an unconditional loop (for(;;)); only emit the exit
+    // branch when there is a real condition to evaluate.
+    let skip_body_label = null;
+    if(node.test){
+        scope.generate(node.test);
+        emitJumpIfFalse(scope);
+        skip_body_label = scope.makeLabel(Uint32Array.BYTES_PER_ELEMENT);
+        skip_body_label.setOrigin();
+    }
 
+    let ctx: LoopContext = { breaks: [], continues: [], continueOffset: 0 };
+    loopStack.push(ctx);
     if(node.body) scope.generate(node.body);
+    loopStack.pop();
+
+    // continue jumps to the update expression (or straight to the back-edge if
+    // there is no update).
+    let continueOffset = scope.offset;
+    ctx.continues!.forEach(label => { label.destination = continueOffset; });
+
     if(node.update) scope.generate(node.update);
 
     emitJMP(scope);
     pre_test_label.setOrigin();
-    skip_body_label.setTarget();
+    if(skip_body_label) skip_body_label.setTarget();
+
+    ctx.breaks.forEach(label => label.setTarget());
 }
 
 export function GenerateVariableDeclaration(node: VariableDeclaration, scope: Scope){
@@ -883,21 +974,19 @@ export function GenerateUpdateExpression(node: UpdateExpression, scope: Scope){
     switch(argument.type){
         case "Identifier": {
             let varid = scope.getVarId(argument.name);
+            if(varid === -1){
+                throw("Cant handle global " + node.operator + " yet");
+            }
             switch(node.operator){
                 case "++": {
-                    if(varid === -1){
-                        throw("Cant handle global++ yet");
-                    }else{
-                        emitPlusPlus(scope, varid);
-                    }
+                    // Prefix yields the new value, postfix yields the old one.
+                    if(node.prefix) emitPrePlusPlus(scope, varid);
+                    else emitPlusPlus(scope, varid);
                     break;
                 }
                 case "--": {
-                    if(varid === -1){
-                        throw("Cant handle global++ yet");
-                    }else{
-                        emitMinusMinus(scope, varid);
-                    }
+                    if(node.prefix) emitPreMinusMinus(scope, varid);
+                    else emitMinusMinus(scope, varid);
                     break;
                 }
                 default:
@@ -944,7 +1033,7 @@ export function GenerateBinaryExpression(node: BinaryExpression, scope: Scope){
             break;
         }
         case "!==": {
-            emitNotEqualTo(scope);
+            emitNotEqualToStrict(scope);
             break;
         }
         case "**": {
