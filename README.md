@@ -1,46 +1,50 @@
 # jscvm
 
-A JavaScript-to-bytecode **virtualizing obfuscator**. It compiles JS into a custom stack-machine bytecode and ships it inside a minimal emulator (the VM). The original logic never appears as JS — it exists only as encrypted bytecode interpreted at runtime.
+takes your javascript, compiles it down to bytecode, and ships it inside a tiny VM that runs it. so your actual logic never shows up as readable JS in the output, it's just encrypted bytecode that only the bundled interpreter knows how to run.
 
-## How it works
+heads up before anything else: this is obfuscation, not encryption. someone patient with devtools can still pull it apart at runtime. the whole point is just to make that really annoying.
+
+## how it works
 
 ```
-source ─▶ lower (Babel) ─▶ parse (acorn) ─▶ scope analysis ─▶ bytecode
-       ─▶ stream-cipher + base64 ─▶ embed in emulator ─▶ Terser + javascript-obfuscator
+source -> lower (babel) -> parse (acorn) -> scope analysis -> bytecode
+       -> encrypt + base64 -> embed in the emulator -> terser + javascript-obfuscator
 ```
 
-- **Compile** — source is lowered (`let`/`const`, `async`/`await`), parsed, scope-analyzed, and emitted as bytecode for a custom stack VM.
-- **Protect (per build)** — opcodes are shuffled; the whole bytecode buffer (including the string table) is encrypted with a position-keyed stream cipher; the cipher seed is *not stored* but rebuilt at runtime from the payload's integrity, so patching the program or the handler table decrypts to garbage (no check to bypass); native `Function.prototype.apply` is captured and the dispatch table frozen.
-- **Package** — the emulator + embedded bytecode is minified and run through `javascript-obfuscator`.
+a few things happen on every build:
 
-## Install / build
+- your code gets compiled to bytecode for a custom stack machine
+- the whole bytecode blob (strings included) gets encrypted, and the key isn't stored anywhere. the VM rebuilds it at runtime from a hash of the payload, so if someone patches the bytecode or the handler table it just decrypts to garbage. there's no `if (tampered)` check to find and delete
+- opcodes get shuffled every build, then the emulator itself gets minified and run through javascript-obfuscator on top
+
+## install / build
 
 ```bash
 npm install
 npm run build
 ```
 
-## CLI
+## cli
 
 ```bash
 npm run compile -- --input path/to/source.js --out ./out
 ```
 
-`-i, --input <path>` · `-o, --out <dir>` · `--no-minify` (skip the obfuscator pass) · `-h, --help`.
-Emits `<name>.bytecode.js` and (unless `--no-minify`) `<name>.bytecode.min.js`.
+flags are `-i/--input`, `-o/--out`, `--no-minify` (skips the slow obfuscator pass) and `-h/--help`. you get back `<name>.bytecode.js`, plus `<name>.bytecode.min.js` unless you passed `--no-minify`.
 
-## Node API
+## node api
 
 ```js
 const { obfuscate } = require("jscvm");
 
-const code = await obfuscate(source, { minify: true }); // returns a self-contained bundle
+const code = await obfuscate(source, { minify: true });
 ```
 
-The bundle exposes the program's return value on `globalThis.vm` and `module.exports`.
-`minify: false` skips the (heavy) obfuscator pass — much faster, bytecode still encrypted.
+gives you back a self-contained bundle. it exposes the program's return value on `globalThis.vm` and `module.exports`.
 
-## Webpack
+if you want it fast, pass `minify: false`. that skips the heavy obfuscator pass but the bytecode is still encrypted.
+
+## webpack
 
 ```js
 const { JSCVMWebpackPlugin } = require("jscvm/webpack");
@@ -48,73 +52,76 @@ const { JSCVMWebpackPlugin } = require("jscvm/webpack");
 module.exports = {
   plugins: [
     new JSCVMWebpackPlugin({
-      test: /\.js$/,     // assets to process
-      minify: true,      // obfuscator pass
-      maxBytes: 512*1024,// skip larger assets
-      cache: true        // content-hash cache across rebuilds
+      test: /\.js$/,       // which assets to hit
+      minify: true,
+      maxBytes: 512 * 1024,// skip anything bigger than this
+      cache: true          // don't recompile stuff that didn't change
     })
   ]
 };
 ```
 
-Processes final emitted assets in parallel, caches by content hash, skips oversized assets, and **leaves any asset the VM can't compile untouched with a build warning** — an unsupported construct never breaks the build.
+it runs on the final built assets, does them in parallel, and caches by content hash so watch rebuilds aren't painful. if it hits something the VM can't compile, it leaves that asset alone and drops a build warning instead of blowing up your build.
 
-**Other bundlers** — call `require("jscvm").obfuscate(code)` from a Rollup `renderChunk`, esbuild plugin, or Vite `generateBundle` hook; same result.
+using rollup / esbuild / vite instead? there's nothing special in the plugin, just call `require("jscvm").obfuscate(code)` inside whatever transform hook they give you.
 
-## Supported JavaScript
+## what actually works
 
-`var` / `let` / `const` · functions, function expressions, **arrow functions** (lexical `this`/`arguments`), closures, recursion · `if`/`else`, ternary · `for`, `while`, `do…while`, `switch`, `break`/`continue` · `try`/`catch`/`finally` (incl. `return`/`break` through `finally`), `throw` · all arithmetic/bitwise/logical/comparison/unary operators, `++`/`--`, all compound assignments (`+=` … `**=`, `<<=` …) · object/array literals, computed/string/numeric keys, shorthand, methods, getters/setters · member/computed access, calls, methods, `new`, calling call-results · `async`/`await` · `regex`, `typeof`, `delete`, `void`, `in`, `instanceof`, `arguments`.
+`var` / `let` / `const`, functions, arrow functions (with proper lexical `this`/`arguments`), closures, recursion, `if` / ternary, `for` / `while` / `do…while` / `switch`, `break` / `continue`, `try`/`catch`/`finally` (including `return`/`break` through a finally), `throw`, all the operators plus `++`/`--` and every compound assignment (`+=` through `**=`, `<<=`, etc), object/array literals with computed/string/number keys, shorthand, methods, getters/setters, member access, calls, `new`, `async`/`await`, regex, `typeof`/`delete`/`void`/`in`/`instanceof`, and `arguments`.
 
-Unsupported constructs fail loudly at compile time — see the roadmap.
+anything it doesn't support yet just errors at compile time instead of silently doing the wrong thing. check the roadmap for what's still missing.
 
-## When to use / not
+## when to use it, and when not
 
-**Use it for** raising the reverse-engineering cost of small, security-sensitive client-side logic — protocol/codec internals, licence or integrity checks, anti-cheat helpers.
+use it for hiding small bits of client-side logic you'd rather people didn't read. protocol or codec internals, license checks, anti-cheat helpers, that kind of thing.
 
-**Do not use it** as encryption or DRM (it's obfuscation — runtime instrumentation still works), to store secrets or keys (recoverable at runtime), on hot paths (bytecode is interpreted, so materially slower than native — obfuscate *boundaries*, not tight loops), or on code that uses unsupported features (it won't compile).
+don't use it for:
 
-## Performance
+- anything that actually needs to be secure. this is obfuscation, not crypto
+- storing secrets or api keys, they're always recoverable at runtime
+- hot paths or tight loops, everything runs through an interpreter so it's slower than plain JS. wrap the boundaries, not your render loop
+- code that uses stuff it doesn't support yet, it'll just fail to compile
 
-- Compile time is dominated by the obfuscator pass; use `minify: false` for dev/large builds.
-- The webpack plugin caches by content hash, skips assets over `maxBytes`, and processes assets in parallel.
-- Runtime is interpreted — expect a constant-factor slowdown versus native.
+## performance
 
-## Roadmap
+most of the build time is the obfuscator pass, so `minify: false` is a lot faster when you don't need it. the webpack plugin caches, skips big files, and runs assets in parallel. runtime is slower than native since everything's interpreted, that's the tradeoff you're making.
 
-**Language — near term**
-- [ ] Template literals
-- [ ] Optional chaining `?.`, nullish `??`, logical assignment `??=` / `&&=` / `||=`
-- [ ] Spread (calls, arrays, objects)
-- [ ] Rest & default parameters
+## roadmap
+
+**language, soon-ish**
+- [ ] template literals
+- [ ] optional chaining `?.`, nullish `??`, logical assignment `??=` / `&&=` / `||=`
+- [ ] spread (calls, arrays, objects)
+- [ ] rest & default params
 - [ ] `for…of` / `for…in`
 
-**Language — later**
-- [ ] Destructuring (declarations, parameters, assignment)
-- [ ] Labeled statements + labeled `break`/`continue`
-- [ ] Tagged templates · BigInt literals
-- [ ] Classes / `extends` / `super`
-- [ ] Generators (`yield`), async generators, `for await`
+**language, later**
+- [ ] destructuring (declarations, params, assignment)
+- [ ] labeled statements + labeled `break`/`continue`
+- [ ] tagged templates, BigInt literals
+- [ ] classes / `extends` / `super`
+- [ ] generators (`yield`), async generators, `for await`
 - [ ] ES modules (`import`/`export`)
 
-**Obfuscation hardening**
-- [x] Per-build opcode shuffling
-- [x] Position-keyed bytecode + string-table encryption
-- [x] Checksum-as-key (tamper → garbage, branchless)
-- [x] Native-reference capture + frozen dispatch table
-- [ ] Superinstructions / handler polymorphism
-- [ ] Junk/dead bytecode + opaque predicates
-- [ ] Branchless VM-level anti-debug
-- [ ] Encoded value domain (stack values transformed)
+**obfuscation hardening**
+- [x] per-build opcode shuffling
+- [x] position-keyed bytecode + string encryption
+- [x] checksum-as-key (tamper it and it decrypts to garbage, no branch to strip)
+- [x] native ref capture + frozen dispatch table
+- [ ] superinstructions / handler polymorphism
+- [ ] junk/dead bytecode + opaque predicates
+- [ ] branchless VM-level anti-debug
+- [ ] encoded value domain (transform values on the stack)
 
-**Tooling**
-- [x] CLI · Node API · Webpack 5 plugin
-- [ ] Rollup / esbuild / Vite adapters
-- [ ] Worker-thread offloading for large builds
+**tooling**
+- [x] cli, node api, webpack 5 plugin
+- [ ] rollup / esbuild / vite adapters
+- [ ] worker threads for big builds
 
-## Security
+## about the security
 
-Obfuscation, not cryptography. A motivated attacker with the runtime can still instrument, trace, or step through the emulator. The per-build measures above raise the effort; they do not make extraction impossible. Do not embed long-lived secrets.
+saying it one more time since it matters: obfuscation, not cryptography. anyone with the runtime can trace or step through the emulator if they really want to. all the per-build stuff raises the effort, it doesn't make extraction impossible. don't put long-lived secrets in here.
 
-## Layout
+## layout
 
-`src/` — parser, scope analysis, bytecode codegen, emulator, transpile pass, CLI, webpack plugin · `dist/` — build output · `scripts/` — CLI runner and dev server.
+`src/` has the parser, scope analysis, codegen, emulator, transpile pass, cli and webpack plugin. `dist/` is the build output. `scripts/` has the cli runner and a little dev server.
