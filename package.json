@@ -1,7 +1,10 @@
 {
-  "name": "jscvm",
+  "name": "@al007ex/jscvm",
   "version": "1.0.0",
   "description": "JavaScript-to-bytecode virtualizing obfuscator with a bundled emulator (VM).",
+  "publishConfig": {
+    "access": "public"
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {

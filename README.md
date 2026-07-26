@@ -35,7 +35,7 @@ flags are `-i/--input`, `-o/--out`, `--no-minify` (skips the slow obfuscator pas
 ## node api
 
 ```js
-const { obfuscate } = require("jscvm");
+const { obfuscate } = require("@al007ex/jscvm");
 
 const code = await obfuscate(source, { minify: true });
 ```
@@ -47,7 +47,7 @@ if you want it fast, pass `minify: false`. that skips the heavy obfuscator pass 
 ## webpack
 
 ```js
-const { JSCVMWebpackPlugin } = require("jscvm/webpack");
+const { JSCVMWebpackPlugin } = require("@al007ex/jscvm/webpack");
 
 module.exports = {
   plugins: [
@@ -63,7 +63,7 @@ module.exports = {
 
 it runs on the final built assets, does them in parallel, and caches by content hash so watch rebuilds aren't painful. if it hits something the VM can't compile, it leaves that asset alone and drops a build warning instead of blowing up your build.
 
-using rollup / esbuild / vite instead? there's nothing special in the plugin, just call `require("jscvm").obfuscate(code)` inside whatever transform hook they give you.
+using rollup / esbuild / vite instead? there's nothing special in the plugin, just call `require("@al007ex/jscvm").obfuscate(code)` inside whatever transform hook they give you.
 
 ## what actually works
 

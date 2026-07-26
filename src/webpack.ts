@@ -2,7 +2,7 @@
 // ---------------------------------------------------------------------------
 // Webpack 5 plugin.
 //
-//   const { JSCVMWebpackPlugin } = require("jscvm/webpack");
+//   const { JSCVMWebpackPlugin } = require("@al007ex/jscvm/webpack");
 //   plugins: [ new JSCVMWebpackPlugin({ test: /\.js$/, minify: true }) ]
 //
 // Runs each matching emitted asset through the jscvm obfuscator, replacing it
@@ -15,7 +15,7 @@
 // obfuscator pass. Any asset the VM cannot compile is left untouched with a
 // build warning, so an unsupported construct never breaks the build.
 //
-// Other bundlers: there is no magic here — call `require("jscvm").obfuscate(code)`
+// Other bundlers: there is no magic here — call `require("@al007ex/jscvm").obfuscate(code)`
 // from a Rollup `renderChunk`, esbuild plugin, or Vite `generateBundle` hook to
 // get the same behaviour.
 // ---------------------------------------------------------------------------
