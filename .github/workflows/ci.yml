@@ -1,0 +1,27 @@
+name: CI
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x, 22.x]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: Smoke test
+        run: node -e "require('./dist/index.js').obfuscate('globalThis.x=41+1;',{minify:false}).then(c=>{const vm=require('vm');const ctx={Object,Function,Array,String,Math,RegExp,Reflect,Uint8Array,Float64Array,Buffer,module:{exports:{}}};ctx.globalThis=ctx;vm.createContext(ctx);vm.runInContext(c,ctx);if(ctx.x!==42)throw new Error('got '+ctx.x);console.log('ok',ctx.x)})"
