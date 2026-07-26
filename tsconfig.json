@@ -3,6 +3,7 @@
         "target": "es5",
         "esModuleInterop": true,
         "sourceMap": true,
+        "declaration": true,
        // "noImplicitAny": true,
        // "noImplicitReturns": true,
         "lib": [
@@ -15,5 +16,5 @@
         "strict": false,
         "outDir": "./dist"
     },
-    "include": [ "./src/index.ts" ]
+    "include": [ "./src/index.ts", "./src/webpack.ts" ]
 }

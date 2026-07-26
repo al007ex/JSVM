@@ -253,6 +253,30 @@ export async function compileToBundles(code: string, shouldMinify: boolean): Pro
     return { bundle, minified };
 }
 
+// ---------------------------------------------------------------------------
+// Public Node API
+// ---------------------------------------------------------------------------
+
+export interface ObfuscateOptions {
+    /**
+     * Apply the Terser + javascript-obfuscator hardening pass on top of the VM
+     * bundle. Default true. Set to false for a much faster build — the bytecode
+     * is still encrypted and embedded, only the surrounding emulator is left
+     * un-obfuscated. Recommended for very large inputs or watch-mode dev builds.
+     */
+    minify?: boolean;
+}
+
+/**
+ * Compile `source` to a self-contained VM bundle and return it as a string.
+ * The bundle runs the program through the embedded emulator; it exposes the
+ * program's return value on `globalThis.vm` / `module.exports`.
+ */
+export async function obfuscate(source: string, options: ObfuscateOptions = {}): Promise<string> {
+    const { bundle, minified } = await compileToBundles(source, options.minify !== false);
+    return minified !== undefined ? minified : bundle;
+}
+
 async function run(): Promise<void> {
     const { inputPath, outputDir, baseName, shouldMinify } = parseArgs();
     const code = fs.readFileSync(inputPath, { encoding: "utf8" });
