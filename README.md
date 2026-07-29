@@ -67,7 +67,7 @@ using rollup / esbuild / vite instead? there's nothing special in the plugin, ju
 
 ## what actually works
 
-`var` / `let` / `const`, functions, arrow functions (with proper lexical `this`/`arguments`), closures, recursion, `if` / ternary, `for` / `while` / `do…while` / `switch`, `break` / `continue`, `try`/`catch`/`finally` (including `return`/`break` through a finally), `throw`, all the operators plus `++`/`--` and every compound assignment (`+=` through `**=`, `<<=`, etc), object/array literals with computed/string/number keys, shorthand, methods, getters/setters, member access, calls, `new`, `async`/`await`, regex, `typeof`/`delete`/`void`/`in`/`instanceof`, and `arguments`.
+`var` / `let` / `const`, functions, arrow functions (with proper lexical `this`/`arguments`), closures, recursion, `if` / ternary, `for` / `while` / `do…while` / `switch`, `break` / `continue`, `try`/`catch`/`finally` (including `return`/`break` through a finally), `throw`, all the operators plus `++`/`--` and every compound assignment (`+=` through `**=`, `<<=`, etc), object/array literals with computed/string/number keys, shorthand, methods, getters/setters, member access, calls, `new`, `async`/`await`, regex, template literals, `typeof`/`delete`/`void`/`in`/`instanceof`, and `arguments`.
 
 anything it doesn't support yet just errors at compile time instead of silently doing the wrong thing. check the roadmap for what's still missing.
 
@@ -89,7 +89,7 @@ most of the build time is the obfuscator pass, so `minify: false` is a lot faste
 ## roadmap
 
 **language, soon-ish**
-- [ ] template literals
+- [x] template literals
 - [ ] optional chaining `?.`, nullish `??`, logical assignment `??=` / `&&=` / `||=`
 - [ ] spread (calls, arrays, objects)
 - [ ] rest & default params
