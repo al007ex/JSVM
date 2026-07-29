@@ -1,7 +1,7 @@
 
 import {parse} from "acorn";
 import { traverse } from "estraverse";
-import { GenerateArrayExpression, GenerateAssignmentExpression, GenerateBinaryExpression, GenerateBlockStatement, GenerateBreakStatement, GenerateContinueStatement, GenerateByteCode, GenerateCallExpression, GenerateArrowFunctionExpression, GenerateConditionalExpression, GenerateDebuggerStatement, GenerateDoWhileStatement, GenerateExpressionStatement, GenerateForStatement, GenerateFunctionDeclaration, GenerateFunctionExpression, GenerateIdentifier, GenerateIfStatement, GenerateLiteral, GenerateLogicalExpression, GenerateMemberExpression, GenerateNewExpression, GenerateObjectExpression, GenerateProgram, GenerateProperty, GenerateReturnStatement, GenerateSequenceExpression, GenerateSwitchStatement, GenerateThisExpression, GenerateThrowStatement, GenerateTryStatement, GenerateUnaryExpression, GenerateUpdateExpression, GenerateVariableDeclaration, GenerateVariableDeclarator, GenerateWhileStatement } from "./ASTCodegen";
+import { GenerateArrayExpression, GenerateAssignmentExpression, GenerateBinaryExpression, GenerateBlockStatement, GenerateBreakStatement, GenerateContinueStatement, GenerateByteCode, GenerateCallExpression, GenerateArrowFunctionExpression, GenerateConditionalExpression, GenerateDebuggerStatement, GenerateDoWhileStatement, GenerateExpressionStatement, GenerateForStatement, GenerateFunctionDeclaration, GenerateFunctionExpression, GenerateIdentifier, GenerateIfStatement, GenerateLiteral, GenerateLogicalExpression, GenerateMemberExpression, GenerateNewExpression, GenerateObjectExpression, GenerateProgram, GenerateProperty, GenerateReturnStatement, GenerateSequenceExpression, GenerateSwitchStatement, GenerateTemplateLiteral, GenerateThisExpression, GenerateThrowStatement, GenerateTryStatement, GenerateUnaryExpression, GenerateUpdateExpression, GenerateVariableDeclaration, GenerateVariableDeclarator, GenerateWhileStatement } from "./ASTCodegen";
 import { Label } from "./Label";
 import { Strings } from "./Strings";
 import { BlockStatement, ThrowStatement, SequenceExpression, ConditionalExpression, TryStatement, BreakStatement, SwitchStatement, LogicalExpression, NewExpression, DebuggerStatement, ArrayExpression, ThisExpression, FunctionExpression, Property, MemberExpression, ForStatement, ObjectExpression, UnaryExpression, UpdateExpression, ReturnStatement, CallExpression, FunctionDeclaration, Identifier, AssignmentExpression, VariableDeclaration, WhileStatement, BinaryExpression, Literal, Node, VariableDeclarator, IfStatement, Program, ExpressionStatement } from "estree";
@@ -220,6 +220,9 @@ export class Scope{
         switch(node.type){
             case "Literal":
                 GenerateLiteral(node, this);
+                break;
+            case "TemplateLiteral":
+                GenerateTemplateLiteral(node, this);
                 break;
             case "Program":
                 GenerateProgram(node, this);

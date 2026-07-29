@@ -428,6 +428,23 @@ export function GenerateLiteral(node: Literal, scope: Scope){
     else throw("Unsupported literal type" + node.value);
 }
 
+// `a${x}b${y}c` compiles to cooked0 + x + cooked1 + y + cooked2, left to right,
+// which matches the spec's evaluation order and (via string `+`) coerces each
+// interpolated value to a string. quasis always has exactly one more element
+// than expressions. No new opcodes needed.
+export function GenerateTemplateLiteral(node: any, scope: Scope){
+    const quasis = node.quasis;
+    const expressions = node.expressions;
+
+    emitString(scope, scope.getStringId(quasis[0].value.cooked));
+    for(let i = 0; i < expressions.length; i++){
+        scope.generate(expressions[i]);
+        emitAdd(scope);
+        emitString(scope, scope.getStringId(quasis[i + 1].value.cooked));
+        emitAdd(scope);
+    }
+}
+
 export function GenerateWhileStatement(node: WhileStatement, scope: Scope){
 
     // continue re-evaluates the test, which sits at the top of the loop.
